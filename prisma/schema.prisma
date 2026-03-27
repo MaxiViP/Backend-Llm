@@ -30,6 +30,16 @@ model User {
   @@map("users")
 }
 
+model EmailCode {
+  id        String   @id @default(uuid())
+  email     String
+  code      String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([email])
+}
+
 model Chat {
   id        String   @id @default(uuid())
   userId    String
@@ -59,11 +69,11 @@ model Message {
 model Transaction {
   id          String   @id @default(uuid())
   userId      String
-  amount      Decimal  // положительное = пополнение, отрицательное = списание
-  type        String   // "deposit" | "usage" | "refund"
+  amount      Decimal
+  type        String   // deposit | usage
   description String
-  status      String   @default("completed") // completed | pending | failed
-  metadata    Json?    // для хранения доп. данных (например, chatId, tokens)
+  status      String   @default("completed")
+  metadata    Json?
   createdAt   DateTime @default(now())
 
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)

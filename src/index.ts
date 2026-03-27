@@ -10,6 +10,8 @@ import authRouter from './routes/auth.js';
 import chatsRouter from './routes/chats.js';
 import { errorHandler } from './middleware/error.js';
 
+import billingRouter from './routes/billing.js'
+
 dotenv.config();
 
 const app: Express = express();
@@ -38,6 +40,8 @@ app.get('/', (req, res) => {
 
 // Error handling — важно использовать как error middleware
 app.use(errorHandler);
+
+app.use('/api/billing', billingRouter)
 
 const server = http.createServer(app);
 
