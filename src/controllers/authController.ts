@@ -6,9 +6,10 @@ import jwt from 'jsonwebtoken'
 const prisma = new PrismaClient()
 
 const generateToken = (user: any) => {
-	return jwt.sign({ id: user.id, email: user.email }, process.env.JWT_SECRET!, { expiresIn: '7d' })
+	return jwt.sign({ id: user.id, email: user.email }, process.env.JWT_SECRET!, { expiresIn: '30d' })
 }
 
+// ====================== РЕГИСТРАЦИЯ ======================
 export const register = async (req: Request, res: Response) => {
 	const { email, password, name } = req.body
 
@@ -18,7 +19,7 @@ export const register = async (req: Request, res: Response) => {
 
 	const existing = await prisma.user.findUnique({ where: { email } })
 	if (existing) {
-		return res.status(400).json({ error: 'Пользователь уже существует' })
+		return res.status(409).json({ error: 'Пользователь уже существует' })
 	}
 
 	const hashedPassword = await bcrypt.hash(password, 12)
@@ -28,36 +29,47 @@ export const register = async (req: Request, res: Response) => {
 			email,
 			password: hashedPassword,
 			name: name || email.split('@')[0],
+			balance: 100, // стартовый бонус
 		},
 	})
 
 	const token = generateToken(user)
 	res.status(201).json({
-		user: { id: user.id, email: user.email, name: user.name },
+		user: {
+			id: user.id,
+			email: user.email,
+			name: user.name,
+			balance: Number(user.balance),
+			provider: null,
+		},
 		token,
 	})
 }
 
+// ====================== ЛОГИН ======================
 export const login = async (req: Request, res: Response) => {
 	const { email, password } = req.body
 
 	const user = await prisma.user.findUnique({ where: { email } })
-	if (!user || !user.password) {
-		return res.status(401).json({ error: 'Неверный email или пароль' })
-	}
 
-	const isValid = await bcrypt.compare(password, user.password)
-	if (!isValid) {
+	if (!user || !user.password || !(await bcrypt.compare(password, user.password))) {
 		return res.status(401).json({ error: 'Неверный email или пароль' })
 	}
 
 	const token = generateToken(user)
 	res.json({
-		user: { id: user.id, email: user.email, name: user.name },
+		user: {
+			id: user.id,
+			email: user.email,
+			name: user.name,
+			balance: Number(user.balance),
+			provider: user.provider,
+		},
 		token,
 	})
 }
 
+// ====================== GET ME ======================
 export const getMe = async (req: Request, res: Response) => {
 	const userId = (req as any).user?.id
 	if (!userId) return res.status(401).json({ error: 'Не авторизован' })
@@ -69,23 +81,30 @@ export const getMe = async (req: Request, res: Response) => {
 			email: true,
 			name: true,
 			avatarUrl: true,
+			balance: true,
+			provider: true,
 			twoFactorEnabled: true,
 		},
 	})
 
 	if (!user) return res.status(404).json({ error: 'Пользователь не найден' })
 
-	res.json(user)
+	res.json({
+		...user,
+		balance: Number(user.balance),
+	})
 }
 
-// Google OAuth callback
+// ====================== GOOGLE CALLBACK ======================
 export const googleCallback = async (profile: any, req: Request, res: Response) => {
 	const email = profile.emails?.[0]?.value
 	const name = profile.displayName
 	const avatarUrl = profile.photos?.[0]?.value
 	const providerId = profile.id
 
-	if (!email) return res.status(400).json({ error: 'Не удалось получить email' })
+	if (!email) {
+		return res.redirect(`${process.env.FRONTEND_URL}/auth?error=no_email`)
+	}
 
 	let user = await prisma.user.findFirst({
 		where: { OR: [{ providerId }, { email }] },
@@ -99,11 +118,11 @@ export const googleCallback = async (profile: any, req: Request, res: Response) 
 				avatarUrl,
 				provider: 'google',
 				providerId,
+				balance: 100,
 			},
 		})
 	}
 
-	const token = jwt.sign({ id: user.id, email: user.email }, process.env.JWT_SECRET!, { expiresIn: '7d' })
-
+	const token = generateToken(user)
 	res.redirect(`${process.env.FRONTEND_URL}/auth/callback?token=${token}`)
 }
